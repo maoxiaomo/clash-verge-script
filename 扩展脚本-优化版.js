@@ -181,11 +181,11 @@ const ruleProviders = {
 // 规则
 const rules = [
   // 自定义规则
-  "DOMAIN-SUFFIX,googleapis.cn,🤖 智能选择",
-  "DOMAIN-SUFFIX,gstatic.com,🤖 智能选择",
-  "DOMAIN-SUFFIX,xn--ngstr-lra8j.com,🤖 智能选择",
-  "DOMAIN-SUFFIX,github.io,🤖 智能选择",
-  "DOMAIN,v2rayse.com,🤖 智能选择",
+  "DOMAIN-SUFFIX,googleapis.cn,智能选择",
+  "DOMAIN-SUFFIX,gstatic.com,智能选择",
+  "DOMAIN-SUFFIX,xn--ngstr-lra8j.com,智能选择",
+  "DOMAIN-SUFFIX,github.io,智能选择",
+  "DOMAIN,v2rayse.com,智能选择",
   // Loyalsoldier 规则集
   "RULE-SET,applications,全局直连",
   "RULE-SET,private,全局直连",
@@ -202,9 +202,9 @@ const rules = [
   "RULE-SET,google,谷歌服务",
   // 【新增 GitHub 规则】
   "RULE-SET,github,GitHub",
-  "RULE-SET,proxy,🤖 智能选择",
-  "RULE-SET,gfw,🤖 智能选择",
-  "RULE-SET,tld-not-cn,🤖 智能选择",
+  "RULE-SET,proxy,智能选择",
+  "RULE-SET,gfw,智能选择",
+  "RULE-SET,tld-not-cn,智能选择",
   "RULE-SET,direct,全局直连",
   "RULE-SET,lancidr,全局直连,no-resolve",
   "RULE-SET,cncidr,全局直连,no-resolve",
@@ -227,7 +227,7 @@ const groupBaseOption = {
 
 // Smart 模式配置
 const smartGroupConfig = {
-  "name": "🤖 智能选择",
+  "name": "智能选择",
   "type": "smart",
   "uselightgbm": true, 
   "collectdata": false,
@@ -258,12 +258,12 @@ function main(config) {
   
   // 【新增：在核心列表中加入自动选择】
   // 定义核心代理选择列表 (不含全局直连)
-  const coreProxies = ["🤖 智能选择", "自动选择", "手动选择"];
+  const coreProxies = ["智能选择", "自动选择", "手动选择"];
 
 
   // 覆盖原配置中的代理组
   config["proxy-groups"] = [
-    // 1. 🤖 智能选择 (顶端)
+    // 1. 智能选择 (顶端)
     {
       ...groupBaseOption,
       ...smartGroupConfig, // 合并 Smart 配置
@@ -327,35 +327,35 @@ function main(config) {
       ...groupBaseOption,
       "name": "GitHub",
       "type": "select",
-      "proxies": ["全局直连","🤖 智能选择", "自动选择", "手动选择"], 
+      "proxies": ["全局直连","智能选择", "自动选择", "手动选择"], 
       "icon": "https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/github.svg"
     },
     {
       ...groupBaseOption,
       "name": "TikTok",
       "type": "select",
-      "proxies": ["全局直连", "🤖 智能选择", "自动选择", "手动选择"], 
+      "proxies": ["全局直连", "智能选择", "自动选择", "手动选择"], 
       "icon": "https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/icon/tiktok.svg"
     },
     {
       ...groupBaseOption,
       "name": "微软服务",
       "type": "select",
-      "proxies": ["全局直连","🤖 智能选择", "自动选择", "手动选择"], 
+      "proxies": ["全局直连","智能选择", "自动选择", "手动选择"], 
       "icon": "https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/microsoft.svg" 
     },
     {
       ...groupBaseOption,
       "name": "苹果服务",
       "type": "select",
-      "proxies": ["全局直连", "🤖 智能选择", "自动选择", "手动选择"], 
+      "proxies": ["全局直连", "智能选择", "自动选择", "手动选择"], 
       "icon": "https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/apple.svg" 
     },
     {
       ...groupBaseOption,
       "name": "哔哩哔哩港澳台",
       "type": "select",
-      "proxies": ["全局直连","🤖 智能选择", "自动选择", "手动选择"], 
+      "proxies": ["全局直连","智能选择", "自动选择", "手动选择"], 
       "icon": "https://fastly.jsdelivr.net/gh/xiaolin-007/clash@main/icon/bilibili.svg"
     },
     {
@@ -376,7 +376,7 @@ function main(config) {
       ...groupBaseOption,
       "name": "全局直连",
       "type": "select",
-      "proxies": ["DIRECT","REJECT","🤖 智能选择", "自动选择", "手动选择"],
+      "proxies": ["DIRECT","REJECT","智能选择", "自动选择", "手动选择"],
       "icon": "https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/link.svg" 
     },
     {
@@ -390,7 +390,7 @@ function main(config) {
       ...groupBaseOption,
       "name": "漏网之鱼",
       "type": "select",
-      "proxies": ["🤖 智能选择", "自动选择", "手动选择"],
+      "proxies": ["智能选择", "自动选择", "手动选择"],
       "icon": "https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev.github.io@main/docs/assets/icons/fish.svg"
     }
   ];
