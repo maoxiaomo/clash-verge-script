@@ -12,6 +12,8 @@
 //   8. 苹果服务独立成组（默认 DIRECT，可面板切换）；流媒体组改 fallback + Netflix 解锁检测；
 //      国外 DoH 精简为 Cloudflare + Google
 //   9. 新增「负载均衡」组，仅作为「国际域名」「漏网之鱼」的可选项，不进 coreProxies
+//  10. 地区匹配加国旗 emoji（很多机场节点名只有国旗没有文字）；地区扩到 24 个；
+//      中转节点（🇭🇰 → 🇺🇸）按最后出现的地区归组，不再同时进两个地区组
 // =========================
 
 // =========================
@@ -246,50 +248,143 @@ const TOLERANCE = 100;
 // 注意别把档位名当信息节点：Premium / VIP / 高级 这类词很多机场用在正常节点上，不要加进来
 const EXCLUDE_INFO = "官网|套餐|流量|异常|剩余|地址|到期|重置|订阅|邀请|返利|防失联|Expire|Traffic|Reset|Official";
 
-// 国家/地区匹配片段：中文名 + 主要城市 + 带词边界的国家码
-// 词边界(\b)是关键：\bUS\b 不会命中 Russia/Australia，\bFR\b 不会命中 Frankfurt
+// 回国/落地大陆的节点：不能进任何出国策略组，否则被选中时国外站点全部不通。
+// 「中国」后面加否定断言：不少机场把香港/台湾节点命名成「中国香港 01」「中国台湾 02」，
+// 只写「中国」会把这些正常节点一起排除掉。
+const EXCLUDE_HOME = "中国(?!香港|台湾|台灣|澳门|澳門)|回国|回國";
+
+// 国家/地区匹配片段：国旗 emoji + 中文名 + 主要城市 + 带词边界的国家码
+// 国旗必须写在最前：很多机场的节点名只有 "🇭🇰 01" 这种 emoji，没有任何文字，
+// 只靠文字/国家码会完全匹配不到，导致地区组为空。
+// 词边界(\b)同样关键：\bUS\b 不会命中 Russia/Australia，\bFR\b 不会命中 Frankfurt
+// 用不到的地区直接删掉整条即可（组的显示顺序 = 这里的书写顺序）
 const countryConfig = {
+  // --- 东亚 / 东南亚 ---
   "香港": {
-    match: "香港|港|\\bHK\\b|\\bHKG\\b|Hong ?Kong",
+    match: "🇭🇰|香港|港|\\bHK\\b|\\bHKG\\b|Hong ?Kong",
     iconCode: "hk"
   },
+  "澳门": {
+    // 只用「澳门」不用裸的「澳」，否则会吃掉澳大利亚的节点
+    match: "🇲🇴|澳门|澳門|\\bMO\\b|\\bMAC\\b|Macao|Macau",
+    iconCode: "mo"
+  },
   "台湾": {
-    match: "台湾|台灣|臺灣|台北|新北|彰化|\\bTW\\b|\\bTWN\\b|Taiwan|Taipei",
+    match: "🇹🇼|台湾|台灣|臺灣|台北|新北|彰化|\\bTW\\b|\\bTWN\\b|Taiwan|Taipei",
     iconCode: "tw"
   },
   "日本": {
-    match: "日本|东京|東京|大阪|埼玉|\\bJP\\b|\\bJPN\\b|Japan|Tokyo|Osaka",
+    match: "🇯🇵|日本|东京|東京|大阪|埼玉|\\bJP\\b|\\bJPN\\b|Japan|Tokyo|Osaka",
     iconCode: "jp"
   },
-  "新加坡": {
-    match: "新加坡|狮城|獅城|\\bSG\\b|\\bSGP\\b|Singapore",
-    iconCode: "sg"
-  },
   "韩国": {
-    match: "韩国|韓國|首尔|首爾|\\bKR\\b|\\bKOR\\b|Korea|Seoul",
+    match: "🇰🇷|韩国|韓國|首尔|首爾|\\bKR\\b|\\bKOR\\b|Korea|Seoul",
     iconCode: "kr"
   },
+  "新加坡": {
+    match: "🇸🇬|新加坡|狮城|獅城|\\bSG\\b|\\bSGP\\b|Singapore",
+    iconCode: "sg"
+  },
+  "马来西亚": {
+    match: "🇲🇾|马来西亚|馬來西亞|吉隆坡|\\bMY\\b|\\bMYS\\b|Malaysia|Kuala ?Lumpur",
+    iconCode: "my"
+  },
+  "泰国": {
+    match: "🇹🇭|泰国|泰國|曼谷|\\bTH\\b|\\bTHA\\b|Thailand|Bangkok",
+    iconCode: "th"
+  },
+  "越南": {
+    match: "🇻🇳|越南|胡志明|河内|\\bVN\\b|\\bVNM\\b|Vietnam|Viet ?Nam|Hanoi",
+    iconCode: "vn"
+  },
+  "菲律宾": {
+    match: "🇵🇭|菲律宾|菲律賓|马尼拉|馬尼拉|\\bPH\\b|\\bPHL\\b|Philippines|Manila",
+    iconCode: "ph"
+  },
+  "印尼": {
+    match: "🇮🇩|印尼|印度尼西亚|雅加达|雅加達|\\bID\\b|\\bIDN\\b|Indonesia|Jakarta",
+    iconCode: "id"
+  },
+  "印度": {
+    // 印度(?!尼) 防止吃掉「印度尼西亚」
+    match: "🇮🇳|印度(?!尼)|孟买|孟買|\\bIN\\b|\\bIND\\b|India|Mumbai",
+    iconCode: "in"
+  },
+
+  // --- 中东 / 中亚 ---
+  "阿联酋": {
+    match: "🇦🇪|阿联酋|阿聯酋|迪拜|杜拜|阿布扎比|\\bAE\\b|\\bARE\\b|Dubai|Emirates",
+    iconCode: "ae"
+  },
+  "土耳其": {
+    match: "🇹🇷|土耳其|伊斯坦布尔|伊斯坦堡|\\bTR\\b|\\bTUR\\b|Turkey|Turkiye|Istanbul",
+    iconCode: "tr"
+  },
+
+  // --- 美洲 ---
   "美国": {
-    match: "美国|美國|洛杉矶|洛杉磯|圣何塞|聖何塞|西雅图|芝加哥|达拉斯|纽约|紐約|硅谷|凤凰城|阿什本|" +
+    match: "🇺🇸|美国|美國|洛杉矶|洛杉磯|圣何塞|聖何塞|西雅图|芝加哥|达拉斯|纽约|紐約|硅谷|凤凰城|阿什本|" +
            "\\bUS\\b|\\bUSA\\b|United ?States|Los ?Angeles|San ?Jose|Seattle|Chicago|Dallas|New ?York",
     iconCode: "us"
   },
+  "加拿大": {
+    // 故意不用裸的 \bCA\b：美国节点常写 "US-CA"（加州），会被误判成加拿大
+    match: "🇨🇦|加拿大|多伦多|多倫多|温哥华|溫哥華|蒙特利尔|\\bCAN\\b|Canada|Toronto|Vancouver|Montreal",
+    iconCode: "ca"
+  },
+  "巴西": {
+    match: "🇧🇷|巴西|圣保罗|聖保羅|\\bBR\\b|\\bBRA\\b|Brazil|Sao ?Paulo",
+    iconCode: "br"
+  },
+  "阿根廷": {
+    match: "🇦🇷|阿根廷|布宜诺斯|\\bAR\\b|\\bARG\\b|Argentina|Buenos ?Aires",
+    iconCode: "ar"
+  },
+
+  // --- 欧洲 ---
   "英国": {
-    match: "英国|英國|伦敦|倫敦|\\bUK\\b|\\bGB\\b|\\bGBR\\b|United ?Kingdom|London",
+    match: "🇬🇧|英国|英國|伦敦|倫敦|\\bUK\\b|\\bGB\\b|\\bGBR\\b|United ?Kingdom|London",
     iconCode: "gb"
   },
   "德国": {
-    match: "德国|德國|法兰克福|法蘭克福|\\bDE\\b|\\bDEU\\b|Germany|Frankfurt",
+    match: "🇩🇪|德国|德國|法兰克福|法蘭克福|\\bDE\\b|\\bDEU\\b|Germany|Frankfurt",
     iconCode: "de"
   },
   "法国": {
-    match: "法国|法國|巴黎|\\bFR\\b|\\bFRA\\b|France|Paris",
+    match: "🇫🇷|法国|法國|巴黎|\\bFR\\b|\\bFRA\\b|France|Paris",
     iconCode: "fr"
+  },
+  "荷兰": {
+    match: "🇳🇱|荷兰|荷蘭|阿姆斯特丹|\\bNL\\b|\\bNLD\\b|Netherlands|Amsterdam",
+    iconCode: "nl"
+  },
+  "俄罗斯": {
+    match: "🇷🇺|俄罗斯|俄羅斯|莫斯科|圣彼得堡|\\bRU\\b|\\bRUS\\b|Russia|Moscow",
+    iconCode: "ru"
+  },
+
+  // --- 大洋洲 ---
+  "澳大利亚": {
+    match: "🇦🇺|澳大利亚|澳大利亞|澳洲|悉尼|墨尔本|墨爾本|\\bAU\\b|\\bAUS\\b|Australia|Sydney|Melbourne",
+    iconCode: "au"
   }
 };
 
-// 不适合跑 AI 服务的地区（IP 纯净度 / 风控）
-const AI_EXCLUDE_COUNTRIES = ["香港节点", "台湾节点"];
+// 生成地区组 filter：命中本地区关键词，且其后不再出现其它地区的关键词。
+// 中转节点通常写成「入口 → 落地」，如「🇭🇰 香港 → 🇺🇸 美国」，
+// 取最后出现的地区当作落地地区，避免同一节点被同时归入两个地区组。
+const buildCountryFilter = countryName => {
+  const own = countryConfig[countryName].match;
+  const others = Object.keys(countryConfig)
+    .filter(other => other !== countryName)
+    .map(other => countryConfig[other].match)
+    .join("|");
+  return `^(?!.*(${EXCLUDE_INFO}))(?!.*(${EXCLUDE_HOME})).*(?:${own})(?!.*(?:${others}))`;
+};
+
+// 不适合跑 AI 服务的地区（IP 纯净度 / 风控 / 服务方不支持）
+// 香港澳门：OpenAI 不提供服务；俄罗斯：OpenAI / Anthropic 明确不支持，登录即封号
+const AI_EXCLUDE_COUNTRIES = ["香港节点", "澳门节点", "台湾节点", "俄罗斯节点"];
 
 // 是否为所有节点强开 UDP。若某些节点实际不支持 UDP，强开会让 UDP 流量黑洞而非回落 TCP，
 // 遇到游戏/语音异常时把这里改成 false。
@@ -342,22 +437,24 @@ function main(config) {
     ? config["proxies"].map(proxy => proxy?.name ?? "")
     : [];
   const canPruneEmpty = proxyProviderCount === 0 && localProxyNames.length > 0;
-  const excludeInfoRe = new RegExp(EXCLUDE_INFO, "i");
-  const hasNodeFor = match => {
-    const matchRe = new RegExp(match, "i");
-    return localProxyNames.some(name => !excludeInfoRe.test(name) && matchRe.test(name));
+  // 判空用的正则与真正下发给内核的 filter 完全一致（含落地地区判定），
+  // 否则「🇭🇰 → 🇺🇸」这种中转节点会让香港组通过判空检查、却在运行时是空组
+  const hasNodeFor = filter => {
+    const filterRe = new RegExp(filter, "i");
+    return localProxyNames.some(name => filterRe.test(name));
   };
 
-  const countryGroups = Object.entries(countryConfig)
-    .filter(([, conf]) => !canPruneEmpty || hasNodeFor(conf.match))
-    .map(([name, conf]) => ({
+  const countryGroups = Object.keys(countryConfig)
+    .map(name => ({ name, conf: countryConfig[name], filter: buildCountryFilter(name) }))
+    .filter(entry => !canPruneEmpty || hasNodeFor(entry.filter))
+    .map(entry => ({
       ...groupBaseOption,
-      "name": `${name}节点`,
+      "name": `${entry.name}节点`,
       "type": "url-test",
       "tolerance": TOLERANCE,
       "include-all": true,
-      "filter": `(?i)^(?!.*(${EXCLUDE_INFO})).*(?:${conf.match})`,
-      "icon": `${ICON_BASE}/flags/${conf.iconCode}.svg`
+      "filter": `(?i)${entry.filter}`,
+      "icon": `${ICON_BASE}/flags/${entry.conf.iconCode}.svg`
     }));
 
   const countryGroupNames = countryGroups.map(group => group.name);
@@ -372,7 +469,7 @@ function main(config) {
       "type": "url-test",
       "tolerance": TOLERANCE,
       "include-all": true,
-      "filter": `(?i)^(?!.*(${EXCLUDE_INFO}|中国|回国)).*$`,
+      "filter": `(?i)^(?!.*(${EXCLUDE_INFO}|${EXCLUDE_HOME})).*$`,
       "icon": `${ICON_BASE}/reddit.svg`
     },
     {
@@ -392,7 +489,7 @@ function main(config) {
       // 视频、AI、需要登录的站点容易触发风控，不要用于这些场景。
       "strategy": "consistent-hashing",
       "include-all": true,
-      "filter": `(?i)^(?!.*(${EXCLUDE_INFO}|中国|回国)).*$`,
+      "filter": `(?i)^(?!.*(${EXCLUDE_INFO}|${EXCLUDE_HOME})).*$`,
       "icon": `${ICON_BASE}/balance.svg`
     },
 
