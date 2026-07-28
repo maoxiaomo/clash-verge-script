@@ -12,8 +12,11 @@
 //   8. 苹果服务独立成组（默认 DIRECT，可面板切换）；流媒体组改 fallback + Netflix 解锁检测；
 //      国外 DoH 精简为 Cloudflare + Google
 //   9. 新增「负载均衡」组，仅作为「国际域名」「漏网之鱼」的可选项，不进 coreProxies
-//  10. 地区匹配加国旗 emoji（很多机场节点名只有国旗没有文字）；地区扩到 24 个；
+//  10. 地区匹配加国旗 emoji（很多机场节点名只有国旗没有文字）；地区扩到 30 个；
 //      中转节点（🇭🇰 → 🇺🇸）按最后出现的地区归组，不再同时进两个地区组
+//  11. 国家码只把英文字母当边界，"🇰🇷KR_1"、"US_2"、"DE01" 这类名字也能正确归组
+//      （下划线属于 \w，原来的 \bKR\b 匹配不到 KR_1）；新增节点名清理（去推广域名）
+//  12. 新增「其他节点」组，收纳没有匹配到任何地区的节点
 // =========================
 
 // =========================
@@ -153,8 +156,6 @@ const ruleProviders = {
 
 const rules = [
   // --- 0. 自定义直连 ---
-  "DOMAIN-SUFFIX,nebulajoy.com,全局直连",
-  "DOMAIN-SUFFIX,yunchanggame.com,全局直连",
 
   // --- 1. 私有域名 / 局域网（必须最前，避免被 tld-not-cn 等提前捞走）---
   "GEOSITE,private,全局直连",
@@ -253,134 +254,108 @@ const EXCLUDE_INFO = "官网|套餐|流量|异常|剩余|地址|到期|重置|�
 // 只写「中国」会把这些正常节点一起排除掉。
 const EXCLUDE_HOME = "中国(?!香港|台湾|台灣|澳门|澳門)|回国|回國";
 
-// 国家/地区匹配片段：国旗 emoji + 中文名 + 主要城市 + 带词边界的国家码
-// 国旗必须写在最前：很多机场的节点名只有 "🇭🇰 01" 这种 emoji，没有任何文字，
-// 只靠文字/国家码会完全匹配不到，导致地区组为空。
-// 词边界(\b)同样关键：\bUS\b 不会命中 Russia/Australia，\bFR\b 不会命中 Frankfurt
+// 国家码的边界判定：不能用 \b。
+// 机场常见命名 "🇰🇷KR_1"、"US_2"、"DE_01" 里，国家码后面紧跟下划线，
+// 而下划线属于 \w，R 和 _ 之间没有词边界，\bKR\b 直接失配 —— 这类节点会归不了组。
+// 这里只把英文字母当边界，数字、下划线、连字符、空格、emoji 全都算分隔符：
+//   命中：KR_1 / US-2 / DE01 / [JP] / 🇸🇬SG
+//   不命中：Frankfurt(FR) / Russia(US) / Australia(AU) / Ruk1ng001(RU)
+// 用 (?:^|[^A-Za-z]) 而不是 lookbehind，兼容性更好。
+const codeToken = code => `(?:^|[^A-Za-z])${code}(?![A-Za-z])`;
+
+// 国家/地区匹配：
+//   text  —— 国旗 emoji、中文名、城市、英文全称，按原样参与匹配
+//   codes —— 2~3 位国家码，自动套上上面的边界判定
+// 匹配到多个地区时取最后出现的那个（中转节点写成「入口 → 落地」，最后一个是落地地区）。
 // 用不到的地区直接删掉整条即可（组的显示顺序 = 这里的书写顺序）
 const countryConfig = {
   // --- 东亚 / 东南亚 ---
-  "香港": {
-    match: "🇭🇰|香港|港|\\bHK\\b|\\bHKG\\b|Hong ?Kong",
-    iconCode: "hk"
-  },
-  "澳门": {
-    // 只用「澳门」不用裸的「澳」，否则会吃掉澳大利亚的节点
-    match: "🇲🇴|澳门|澳門|\\bMO\\b|\\bMAC\\b|Macao|Macau",
-    iconCode: "mo"
-  },
-  "台湾": {
-    match: "🇹🇼|台湾|台灣|臺灣|台北|新北|彰化|\\bTW\\b|\\bTWN\\b|Taiwan|Taipei",
-    iconCode: "tw"
-  },
-  "日本": {
-    match: "🇯🇵|日本|东京|東京|大阪|埼玉|\\bJP\\b|\\bJPN\\b|Japan|Tokyo|Osaka",
-    iconCode: "jp"
-  },
-  "韩国": {
-    match: "🇰🇷|韩国|韓國|首尔|首爾|\\bKR\\b|\\bKOR\\b|Korea|Seoul",
-    iconCode: "kr"
-  },
-  "新加坡": {
-    match: "🇸🇬|新加坡|狮城|獅城|\\bSG\\b|\\bSGP\\b|Singapore",
-    iconCode: "sg"
-  },
-  "马来西亚": {
-    match: "🇲🇾|马来西亚|馬來西亞|吉隆坡|\\bMY\\b|\\bMYS\\b|Malaysia|Kuala ?Lumpur",
-    iconCode: "my"
-  },
-  "泰国": {
-    match: "🇹🇭|泰国|泰國|曼谷|\\bTH\\b|\\bTHA\\b|Thailand|Bangkok",
-    iconCode: "th"
-  },
-  "越南": {
-    match: "🇻🇳|越南|胡志明|河内|\\bVN\\b|\\bVNM\\b|Vietnam|Viet ?Nam|Hanoi",
-    iconCode: "vn"
-  },
-  "菲律宾": {
-    match: "🇵🇭|菲律宾|菲律賓|马尼拉|馬尼拉|\\bPH\\b|\\bPHL\\b|Philippines|Manila",
-    iconCode: "ph"
-  },
-  "印尼": {
-    match: "🇮🇩|印尼|印度尼西亚|雅加达|雅加達|\\bID\\b|\\bIDN\\b|Indonesia|Jakarta",
-    iconCode: "id"
-  },
-  "印度": {
-    // 印度(?!尼) 防止吃掉「印度尼西亚」
-    match: "🇮🇳|印度(?!尼)|孟买|孟買|\\bIN\\b|\\bIND\\b|India|Mumbai",
-    iconCode: "in"
-  },
+  "香港":     { text: "🇭🇰|香港|港|Hong ?Kong", codes: ["HK", "HKG"], iconCode: "hk" },
+  // 只用「澳门」不用裸的「澳」，否则会吃掉澳大利亚的节点
+  "澳门":     { text: "🇲🇴|澳门|澳門|Macao|Macau", codes: ["MO", "MAC"], iconCode: "mo" },
+  "台湾":     { text: "🇹🇼|台湾|台灣|臺灣|台北|新北|彰化|Taiwan|Taipei", codes: ["TW", "TWN"], iconCode: "tw" },
+  "日本":     { text: "🇯🇵|日本|东京|東京|大阪|埼玉|Japan|Tokyo|Osaka", codes: ["JP", "JPN"], iconCode: "jp" },
+  "韩国":     { text: "🇰🇷|韩国|韓國|首尔|首爾|Korea|Seoul", codes: ["KR", "KOR"], iconCode: "kr" },
+  "新加坡":   { text: "🇸🇬|新加坡|狮城|獅城|Singapore", codes: ["SG", "SGP"], iconCode: "sg" },
+  "马来西亚": { text: "🇲🇾|马来西亚|馬來西亞|吉隆坡|Malaysia|Kuala ?Lumpur", codes: ["MY", "MYS"], iconCode: "my" },
+  "泰国":     { text: "🇹🇭|泰国|泰國|曼谷|Thailand|Bangkok", codes: ["TH", "THA"], iconCode: "th" },
+  "越南":     { text: "🇻🇳|越南|胡志明|河内|Vietnam|Viet ?Nam|Hanoi", codes: ["VN", "VNM"], iconCode: "vn" },
+  "菲律宾":   { text: "🇵🇭|菲律宾|菲律賓|马尼拉|馬尼拉|Philippines|Manila", codes: ["PH", "PHL"], iconCode: "ph" },
+  "印尼":     { text: "🇮🇩|印尼|印度尼西亚|雅加达|雅加達|Indonesia|Jakarta", codes: ["ID", "IDN"], iconCode: "id" },
+  // 印度(?!尼) 防止吃掉「印度尼西亚」
+  "印度":     { text: "🇮🇳|印度(?!尼)|孟买|孟買|India|Mumbai", codes: ["IN", "IND"], iconCode: "in" },
 
-  // --- 中东 / 中亚 ---
-  "阿联酋": {
-    match: "🇦🇪|阿联酋|阿聯酋|迪拜|杜拜|阿布扎比|\\bAE\\b|\\bARE\\b|Dubai|Emirates",
-    iconCode: "ae"
-  },
-  "土耳其": {
-    match: "🇹🇷|土耳其|伊斯坦布尔|伊斯坦堡|\\bTR\\b|\\bTUR\\b|Turkey|Turkiye|Istanbul",
-    iconCode: "tr"
-  },
+  // --- 中东 ---
+  "阿联酋":   { text: "🇦🇪|阿联酋|阿聯酋|迪拜|杜拜|阿布扎比|Dubai|Emirates", codes: ["AE", "ARE"], iconCode: "ae" },
+  "土耳其":   { text: "🇹🇷|土耳其|伊斯坦布尔|伊斯坦堡|Turkey|Turkiye|Istanbul", codes: ["TR", "TUR"], iconCode: "tr" },
 
   // --- 美洲 ---
-  "美国": {
-    match: "🇺🇸|美国|美國|洛杉矶|洛杉磯|圣何塞|聖何塞|西雅图|芝加哥|达拉斯|纽约|紐約|硅谷|凤凰城|阿什本|" +
-           "\\bUS\\b|\\bUSA\\b|United ?States|Los ?Angeles|San ?Jose|Seattle|Chicago|Dallas|New ?York",
-    iconCode: "us"
-  },
-  "加拿大": {
-    // 故意不用裸的 \bCA\b：美国节点常写 "US-CA"（加州），会被误判成加拿大
-    match: "🇨🇦|加拿大|多伦多|多倫多|温哥华|溫哥華|蒙特利尔|\\bCAN\\b|Canada|Toronto|Vancouver|Montreal",
-    iconCode: "ca"
-  },
-  "巴西": {
-    match: "🇧🇷|巴西|圣保罗|聖保羅|\\bBR\\b|\\bBRA\\b|Brazil|Sao ?Paulo",
-    iconCode: "br"
-  },
-  "阿根廷": {
-    match: "🇦🇷|阿根廷|布宜诺斯|\\bAR\\b|\\bARG\\b|Argentina|Buenos ?Aires",
-    iconCode: "ar"
-  },
+  "美国":     { text: "🇺🇸|美国|美國|洛杉矶|洛杉磯|圣何塞|聖何塞|西雅图|芝加哥|达拉斯|纽约|紐約|硅谷|凤凰城|阿什本|" +
+                      "United ?States|Los ?Angeles|San ?Jose|Seattle|Chicago|Dallas|New ?York",
+                codes: ["US", "USA"], iconCode: "us" },
+  // 故意不给加拿大配 CA：美国节点常写 "US-CA"（加州），会被误判成加拿大
+  "加拿大":   { text: "🇨🇦|加拿大|多伦多|多倫多|温哥华|溫哥華|蒙特利尔|Canada|Toronto|Vancouver|Montreal",
+                codes: ["CAN"], iconCode: "ca" },
+  "巴西":     { text: "🇧🇷|巴西|圣保罗|聖保羅|Brazil|Sao ?Paulo", codes: ["BR", "BRA"], iconCode: "br" },
+  "阿根廷":   { text: "🇦🇷|阿根廷|布宜诺斯|Argentina|Buenos ?Aires", codes: ["AR", "ARG"], iconCode: "ar" },
 
   // --- 欧洲 ---
-  "英国": {
-    match: "🇬🇧|英国|英國|伦敦|倫敦|\\bUK\\b|\\bGB\\b|\\bGBR\\b|United ?Kingdom|London",
-    iconCode: "gb"
-  },
-  "德国": {
-    match: "🇩🇪|德国|德國|法兰克福|法蘭克福|\\bDE\\b|\\bDEU\\b|Germany|Frankfurt",
-    iconCode: "de"
-  },
-  "法国": {
-    match: "🇫🇷|法国|法國|巴黎|\\bFR\\b|\\bFRA\\b|France|Paris",
-    iconCode: "fr"
-  },
-  "荷兰": {
-    match: "🇳🇱|荷兰|荷蘭|阿姆斯特丹|\\bNL\\b|\\bNLD\\b|Netherlands|Amsterdam",
-    iconCode: "nl"
-  },
-  "俄罗斯": {
-    match: "🇷🇺|俄罗斯|俄羅斯|莫斯科|圣彼得堡|\\bRU\\b|\\bRUS\\b|Russia|Moscow",
-    iconCode: "ru"
-  },
+  "英国":     { text: "🇬🇧|英国|英國|伦敦|倫敦|United ?Kingdom|London", codes: ["UK", "GB", "GBR"], iconCode: "gb" },
+  "德国":     { text: "🇩🇪|德国|德國|法兰克福|法蘭克福|Germany|Frankfurt", codes: ["DE", "DEU"], iconCode: "de" },
+  "法国":     { text: "🇫🇷|法国|法國|巴黎|France|Paris", codes: ["FR", "FRA"], iconCode: "fr" },
+  "荷兰":     { text: "🇳🇱|荷兰|荷蘭|阿姆斯特丹|Netherlands|Amsterdam", codes: ["NL", "NLD"], iconCode: "nl" },
+  "瑞士":     { text: "🇨🇭|瑞士|苏黎世|蘇黎世|日内瓦|日內瓦|Switzerland|Zurich|Geneva", codes: ["CH", "CHE"], iconCode: "ch" },
+  "瑞典":     { text: "🇸🇪|瑞典|斯德哥尔摩|斯德哥爾摩|Sweden|Stockholm", codes: ["SE", "SWE"], iconCode: "se" },
+  "波兰":     { text: "🇵🇱|波兰|波蘭|华沙|華沙|Poland|Warsaw", codes: ["PL", "POL"], iconCode: "pl" },
+  "西班牙":   { text: "🇪🇸|西班牙|马德里|馬德里|巴塞罗那|巴塞隆納|Spain|Madrid|Barcelona", codes: ["ES", "ESP"], iconCode: "es" },
+  // 罗马(?!尼) 防止「罗马尼亚」被意大利抢走（罗马是罗马尼亚的前缀）
+  "意大利":   { text: "🇮🇹|意大利|義大利|米兰|米蘭|罗马(?!尼)|羅馬(?!尼)|Italy|Milan|Rome", codes: ["IT", "ITA"], iconCode: "it" },
+  "罗马尼亚": { text: "🇷🇴|罗马尼亚|羅馬尼亞|布加勒斯特|Romania|Bucharest", codes: ["RO", "ROU"], iconCode: "ro" },
+  "俄罗斯":   { text: "🇷🇺|俄罗斯|俄羅斯|莫斯科|圣彼得堡|Russia|Moscow", codes: ["RU", "RUS"], iconCode: "ru" },
 
   // --- 大洋洲 ---
-  "澳大利亚": {
-    match: "🇦🇺|澳大利亚|澳大利亞|澳洲|悉尼|墨尔本|墨爾本|\\bAU\\b|\\bAUS\\b|Australia|Sydney|Melbourne",
-    iconCode: "au"
-  }
+  "澳大利亚": { text: "🇦🇺|澳大利亚|澳大利亞|澳洲|悉尼|墨尔本|墨爾本|Australia|Sydney|Melbourne",
+                codes: ["AU", "AUS"], iconCode: "au" }
 };
+
+// 把 text 和加了边界的 codes 拼成这个地区的完整匹配片段
+const matchOf = conf => [conf.text, ...conf.codes.map(codeToken)].join("|");
+
+// 所有地区的关键词合集，用于「其他节点」的反向筛选
+const ALL_COUNTRY_TOKENS = Object.keys(countryConfig).map(name => matchOf(countryConfig[name])).join("|");
+
+// 「其他节点」filter：不含任何地区关键词，也不是流量/到期信息节点、不是回国节点。
+// 因为地区组按「最后出现的地区」归组，只要名字里出现过任一地区关键词，
+// 必然会被其中一个地区组收走，所以这里取反集刚好不重不漏。
+const buildOtherFilter = () =>
+  `^(?!.*(${EXCLUDE_INFO}))(?!.*(${EXCLUDE_HOME}))(?!.*(?:${ALL_COUNTRY_TOKENS})).*$`;
 
 // 生成地区组 filter：命中本地区关键词，且其后不再出现其它地区的关键词。
 // 中转节点通常写成「入口 → 落地」，如「🇭🇰 香港 → 🇺🇸 美国」，
 // 取最后出现的地区当作落地地区，避免同一节点被同时归入两个地区组。
 const buildCountryFilter = countryName => {
-  const own = countryConfig[countryName].match;
+  const own = matchOf(countryConfig[countryName]);
   const others = Object.keys(countryConfig)
     .filter(other => other !== countryName)
-    .map(other => countryConfig[other].match)
+    .map(other => matchOf(countryConfig[other]))
     .join("|");
   return `^(?!.*(${EXCLUDE_INFO}))(?!.*(${EXCLUDE_HOME})).*(?:${own})(?!.*(?:${others}))`;
 };
+
+// 节点名清理：不少机场/免费订阅在节点名里塞推广域名，例如
+//   "🔴🇰🇷[🤖📺🎭✨]_github.com/Ruk1ng001_5b8e1a9b"
+// pattern 用 regexp2 语法（和 filter 同一个引擎），target 是替换后的内容。
+// 重要：末尾那串随机码不要删——它是这类节点唯一的区分标识，删掉会出现大量同名节点，
+// 而 provider 内同名节点会互相覆盖，直接导致节点数量减少。
+// 想连开头的 🔴/🟡 一起去掉，就再加一条 { pattern: "^[🔴🟠🟡🟢🔵⚪⚫]+", target: "" }。
+const CLEAN_NODE_NAME = true;
+const NAME_CLEANUP = [
+  // 推广域名：_github.com/xxx_ / t.me/xxx / @某某频道
+  { pattern: "_?(?:https?://)?(?:www\\.)?(?:github\\.com|t\\.me|telegram\\.me|youtube\\.com)/[^\\s_|]+_?", target: "_" },
+  // 连续空格收敛
+  { pattern: "[ \\t]{2,}", target: " " }
+];
+
 
 // 不适合跑 AI 服务的地区（IP 纯净度 / 风控 / 服务方不支持）
 // 香港澳门：OpenAI 不提供服务；俄罗斯：OpenAI / Anthropic 明确不支持，登录即封号
@@ -429,6 +404,36 @@ function main(config) {
   // 对多 IP 的目标同时发起连接取最快，改善首包延迟
   config["tcp-concurrent"] = true;
 
+  // 0. 节点名清理。订阅节点交给内核的 override.proxy-name 处理（脚本拿不到订阅内容）；
+  //    内联节点在这里直接改名，改名后若与已有节点重名则保留原名，避免节点互相覆盖。
+  if (CLEAN_NODE_NAME && NAME_CLEANUP.length > 0) {
+    if (Array.isArray(config["proxies"])) {
+      const used = new Set(config["proxies"].map(proxy => proxy?.name));
+      config["proxies"].forEach(proxy => {
+        if (typeof proxy?.name !== "string") return;
+        let cleaned = proxy.name;
+        NAME_CLEANUP.forEach(rule => {
+          cleaned = cleaned.replace(new RegExp(rule.pattern, "g"), rule.target);
+        });
+        cleaned = cleaned.replace(/^[_\-\s|]+|[_\-\s|]+$/g, "").trim();
+        if (cleaned && cleaned !== proxy.name && !used.has(cleaned)) {
+          used.delete(proxy.name);
+          used.add(cleaned);
+          proxy.name = cleaned;
+        }
+      });
+    }
+    const providersForRename = config["proxy-providers"];
+    if (providersForRename && typeof providersForRename === "object") {
+      Object.values(providersForRename).forEach(provider => {
+        provider["override"] = {
+          ...(provider["override"] || {}),
+          "proxy-name": [...(provider["override"]?.["proxy-name"] || []), ...NAME_CLEANUP]
+        };
+      });
+    }
+  }
+
   // 1. 国家分组：include-all + filter（排除信息节点）
   // 空组处理：订阅里若没有某地区节点，该 url-test 组会是空的。只有当节点全部内联在
   // config.proxies（没有 proxy-providers）时才能可靠判断，这时自动裁掉空组；
@@ -438,10 +443,15 @@ function main(config) {
     : [];
   const canPruneEmpty = proxyProviderCount === 0 && localProxyNames.length > 0;
   // 判空用的正则与真正下发给内核的 filter 完全一致（含落地地区判定），
-  // 否则「🇭🇰 → 🇺🇸」这种中转节点会让香港组通过判空检查、却在运行时是空组
+  // 否则「🇭🇰 → 🇺🇸」这种中转节点会让香港组通过判空检查、却在运行时是空组。
+  // 正则编译失败时一律保留该组，宁可多一个空组也不要误删有节点的组。
   const hasNodeFor = filter => {
-    const filterRe = new RegExp(filter, "i");
-    return localProxyNames.some(name => filterRe.test(name));
+    try {
+      const filterRe = new RegExp(filter, "i");
+      return localProxyNames.some(name => filterRe.test(name));
+    } catch (err) {
+      return true;
+    }
   };
 
   const countryGroups = Object.keys(countryConfig)
@@ -458,8 +468,25 @@ function main(config) {
     }));
 
   const countryGroupNames = countryGroups.map(group => group.name);
-  const coreProxies = ["自动选择", "手动选择", ...countryGroupNames];
-  const aiProxies = countryGroupNames.filter(name => !AI_EXCLUDE_COUNTRIES.includes(name));
+
+  // 1b. 其他节点：没有匹配到任何地区分组的节点都进这里，避免这些节点只能在「手动选择」里找。
+  // 同样受自动裁剪控制：内联节点且没有落单节点时，不生成这个空组。
+  const otherFilter = buildOtherFilter();
+  const otherGroups = (!canPruneEmpty || hasNodeFor(otherFilter))
+    ? [{
+        ...groupBaseOption,
+        "name": "其他节点",
+        "type": "url-test",
+        "tolerance": TOLERANCE,
+        "include-all": true,
+        "filter": `(?i)${otherFilter}`,
+        "icon": `${ICON_BASE}/unknown.svg`
+      }]
+    : [];
+  const otherGroupNames = otherGroups.map(group => group.name);
+
+  const coreProxies = ["自动选择", "手动选择", ...countryGroupNames, ...otherGroupNames];
+  const aiProxies = [...countryGroupNames.filter(name => !AI_EXCLUDE_COUNTRIES.includes(name)), ...otherGroupNames];
 
   config["proxy-groups"] = [
     // 2. 核心策略组
@@ -580,7 +607,8 @@ function main(config) {
     },
 
     // 5. 国家策略组
-    ...countryGroups
+    ...countryGroups,
+    ...otherGroups
   ];
 
   config["rule-providers"] = ruleProviders;
